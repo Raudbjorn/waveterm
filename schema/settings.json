@@ -35,6 +35,9 @@
         "app:disablectrlshiftdisplay": {
           "type": "boolean"
         },
+        "app:altnumbertoterminal": {
+          "type": "boolean"
+        },
         "app:focusfollowscursor": {
           "type": "string",
           "enum": [

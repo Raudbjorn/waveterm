@@ -12,6 +12,7 @@ export type WaveConfigEnv = WaveEnvSubset<{
         FileInfoCommand: WaveEnv["rpc"]["FileInfoCommand"];
         FileReadCommand: WaveEnv["rpc"]["FileReadCommand"];
         FileWriteCommand: WaveEnv["rpc"]["FileWriteCommand"];
+        SetConfigCommand: WaveEnv["rpc"]["SetConfigCommand"];
         SetMetaCommand: WaveEnv["rpc"]["SetMetaCommand"];
         GetSecretsLinuxStorageBackendCommand: WaveEnv["rpc"]["GetSecretsLinuxStorageBackendCommand"];
         GetSecretsNamesCommand: WaveEnv["rpc"]["GetSecretsNamesCommand"];

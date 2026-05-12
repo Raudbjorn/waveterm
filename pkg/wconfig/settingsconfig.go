@@ -67,6 +67,7 @@ type SettingsType struct {
 	AppHideAiButton               bool   `json:"app:hideaibutton,omitempty"`
 	AppDisableCtrlShiftArrows     bool   `json:"app:disablectrlshiftarrows,omitempty"`
 	AppDisableCtrlShiftDisplay    bool   `json:"app:disablectrlshiftdisplay,omitempty"`
+	AppAltNumberToTerminal        bool   `json:"app:altnumbertoterminal,omitempty"`
 	AppFocusFollowsCursor         string `json:"app:focusfollowscursor,omitempty" jsonschema:"enum=off,enum=on,enum=term"`
 	AppTabBar                     string `json:"app:tabbar,omitempty" jsonschema:"enum=top,enum=left"`
 

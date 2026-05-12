@@ -1385,6 +1385,7 @@ declare global {
         "app:hideaibutton"?: boolean;
         "app:disablectrlshiftarrows"?: boolean;
         "app:disablectrlshiftdisplay"?: boolean;
+        "app:altnumbertoterminal"?: boolean;
         "app:focusfollowscursor"?: string;
         "app:tabbar"?: string;
         "feature:waveappbuilder"?: boolean;

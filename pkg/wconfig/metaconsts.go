@@ -16,6 +16,7 @@ const (
 	ConfigKey_AppHideAiButton                = "app:hideaibutton"
 	ConfigKey_AppDisableCtrlShiftArrows      = "app:disablectrlshiftarrows"
 	ConfigKey_AppDisableCtrlShiftDisplay     = "app:disablectrlshiftdisplay"
+	ConfigKey_AppAltNumberToTerminal         = "app:altnumbertoterminal"
 	ConfigKey_AppFocusFollowsCursor          = "app:focusfollowscursor"
 	ConfigKey_AppTabBar                      = "app:tabbar"
 
