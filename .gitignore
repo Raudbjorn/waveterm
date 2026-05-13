@@ -16,6 +16,9 @@ bin/
 out/
 make/
 artifacts/
+archive-*/
+asar-extract/
+*.zip
 mikework/
 aiplans/
 manifests/

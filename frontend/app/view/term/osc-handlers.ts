@@ -312,12 +312,14 @@ export function handleOsc16162Command(data: string, blockId: string, loaded: boo
             const marker = terminal.registerMarker(0);
             if (marker) {
                 termWrap.promptMarkers.push(marker);
+                termWrap.promptInputStartCols.set(marker, terminal.buffer.active.cursorX);
                 // addTestMarkerDecoration(terminal, marker, termWrap);
                 marker.onDispose(() => {
                     const idx = termWrap.promptMarkers.indexOf(marker);
                     if (idx !== -1) {
                         termWrap.promptMarkers.splice(idx, 1);
                     }
+                    termWrap.promptInputStartCols.delete(marker);
                 });
             }
             break;

@@ -52,6 +52,7 @@ const TermCacheFileName = "cache:term:full";
 const MinDataProcessedForCache = 100 * 1024;
 export const SupportsImageInput = true;
 const MaxRepaintTransactionMs = 2000;
+const CtrlClickCursorMoveChunkSize = 64;
 
 // detect webgl support
 function detectWebGLSupport(): boolean {
@@ -119,6 +120,7 @@ export class TermWrap {
     pasteActive: boolean = false;
     lastUpdated: number;
     promptMarkers: TermTypes.IMarker[] = [];
+    promptInputStartCols: Map<TermTypes.IMarker, number> = new Map();
     shellIntegrationStatusAtom: jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
     lastCommandAtom: jotai.PrimitiveAtom<string | null>;
     claudeCodeActiveAtom: jotai.PrimitiveAtom<boolean>;
@@ -128,6 +130,7 @@ export class TermWrap {
     controlKeyDown: boolean = false;
     ctrlClickMouseDownTs: number = 0;
     lastCtrlClickMoveTs: number = 0;
+    ctrlClickMoveTimeouts: ReturnType<typeof setTimeout>[] = [];
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
@@ -163,6 +166,7 @@ export class TermWrap {
         this.hasResized = false;
         this.lastUpdated = Date.now();
         this.promptMarkers = [];
+        this.promptInputStartCols = new Map();
         this.shellIntegrationStatusAtom = jotai.atom(null) as jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
         this.lastCommandAtom = jotai.atom(null) as jotai.PrimitiveAtom<string | null>;
         this.claudeCodeActiveAtom = jotai.atom(false);
@@ -496,6 +500,8 @@ export class TermWrap {
             }
         });
         this.promptMarkers = [];
+        this.promptInputStartCols.clear();
+        this.clearPendingCtrlClickCursorMove();
         this.webglContextLossDisposable?.dispose();
         this.webglContextLossDisposable = null;
         this.terminal.dispose();
@@ -572,11 +578,10 @@ export class TermWrap {
             return false;
         }
         const buffer = this.terminal.buffer.active;
-        const cursorViewportRow = buffer.baseY + buffer.cursorY - buffer.viewportY;
-        if (!this.isClickOnCursorRow(e, target.row, cursorViewportRow)) {
+        const delta = this.getCtrlClickCursorDelta(target);
+        if (delta == null) {
             return false;
         }
-        const delta = target.col - buffer.cursorX;
         this.cancelCtrlClickMouseEvent(e);
         this.lastCtrlClickMoveTs = e.timeStamp;
         if (delta == 0) {
@@ -608,6 +613,7 @@ export class TermWrap {
     }
 
     sendCursorMove(delta: number) {
+        this.clearPendingCtrlClickCursorMove();
         const isRight = delta > 0;
         const seq = this.terminal.modes.applicationCursorKeysMode
             ? isRight
@@ -616,18 +622,59 @@ export class TermWrap {
             : isRight
               ? "\x1b[C"
               : "\x1b[D";
-        this.handleTermData(seq.repeat(Math.abs(delta)));
+        const moveCount = Math.abs(delta);
+        for (let sentCount = 0; sentCount < moveCount; sentCount += CtrlClickCursorMoveChunkSize) {
+            const chunkCount = Math.min(CtrlClickCursorMoveChunkSize, moveCount - sentCount);
+            const chunkData = seq.repeat(chunkCount);
+            if (sentCount == 0) {
+                this.handleTermData(chunkData);
+                continue;
+            }
+            const timeout = setTimeout(() => {
+                this.ctrlClickMoveTimeouts = this.ctrlClickMoveTimeouts.filter((pendingTimeout) => pendingTimeout !== timeout);
+                this.handleTermData(chunkData);
+            }, sentCount / CtrlClickCursorMoveChunkSize);
+            this.ctrlClickMoveTimeouts.push(timeout);
+        }
     }
 
-    isClickOnCursorRow(e: MouseEvent, targetRow: number, cursorViewportRow: number): boolean {
-        if (Math.abs(targetRow - cursorViewportRow) <= 1) {
-            return true;
+    clearPendingCtrlClickCursorMove() {
+        this.ctrlClickMoveTimeouts.forEach((timeout) => clearTimeout(timeout));
+        this.ctrlClickMoveTimeouts = [];
+    }
+
+    getCtrlClickCursorDelta(target: { col: number; row: number }): number | null {
+        const buffer = this.terminal.buffer.active;
+        const cursorViewportRow = buffer.baseY + buffer.cursorY - buffer.viewportY;
+        if (cursorViewportRow < 0 || cursorViewportRow >= this.terminal.rows) {
+            return null;
         }
-        const textareaRect = this.terminal.textarea?.getBoundingClientRect();
-        if (textareaRect == null || textareaRect.height <= 0) {
-            return false;
+        const currentPromptMarker = this.promptMarkers[this.promptMarkers.length - 1];
+        if (currentPromptMarker == null) {
+            return (target.row - cursorViewportRow) * this.terminal.cols + target.col - buffer.cursorX;
         }
-        return e.clientY >= textareaRect.top && e.clientY <= textareaRect.bottom;
+        const targetBufferRow = buffer.viewportY + target.row;
+        const cursorBufferRow = buffer.baseY + buffer.cursorY;
+        const inputStartCol = this.promptInputStartCols.get(currentPromptMarker) ?? 0;
+        const targetOffset = this.getCtrlClickInputOffset(targetBufferRow, target.col, currentPromptMarker.line, inputStartCol);
+        const cursorOffset = this.getCtrlClickInputOffset(cursorBufferRow, buffer.cursorX, currentPromptMarker.line, inputStartCol);
+        if (targetOffset == null || cursorOffset == null) {
+            return null;
+        }
+        return targetOffset - cursorOffset;
+    }
+
+    getCtrlClickInputOffset(
+        bufferRow: number,
+        col: number,
+        inputStartBufferRow: number,
+        inputStartCol: number
+    ): number | null {
+        const rowDelta = bufferRow - inputStartBufferRow;
+        if (rowDelta < 0 || (rowDelta == 0 && col < inputStartCol)) {
+            return null;
+        }
+        return rowDelta * this.terminal.cols + col - inputStartCol;
     }
 
     getClickedTerminalCell(e: MouseEvent): { col: number; row: number } | null {
