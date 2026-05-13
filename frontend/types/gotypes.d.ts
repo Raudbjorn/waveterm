@@ -1183,6 +1183,7 @@ declare global {
         "term:allowbracketedpaste"?: boolean;
         "term:shiftenternewline"?: boolean;
         "term:macoptionismeta"?: boolean;
+        "term:ctrlclickmovescursor"?: boolean;
         "term:cursor"?: string;
         "term:cursorblink"?: boolean;
         "term:conndebug"?: string;
@@ -1419,6 +1420,7 @@ declare global {
         "term:allowbracketedpaste"?: boolean;
         "term:shiftenternewline"?: boolean;
         "term:macoptionismeta"?: boolean;
+        "term:ctrlclickmovescursor"?: boolean;
         "term:cursor"?: string;
         "term:cursorblink"?: boolean;
         "term:bellsound"?: boolean;
@@ -1590,6 +1592,7 @@ declare global {
         "debug:panictype"?: string;
         "block:view"?: string;
         "block:controller"?: string;
+        "block:subblock"?: boolean;
         "ai:backendtype"?: string;
         "ai:local"?: boolean;
         "wsh:cmd"?: string;

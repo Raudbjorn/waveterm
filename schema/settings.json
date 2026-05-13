@@ -149,6 +149,9 @@
         "term:macoptionismeta": {
           "type": "boolean"
         },
+        "term:ctrlclickmovescursor": {
+          "type": "boolean"
+        },
         "term:cursor": {
           "type": "string"
         },

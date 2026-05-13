@@ -39,10 +39,18 @@ function GeneralSettingsVisual({ model }: { model: WaveConfigViewModel }) {
     const env = useWaveEnv<WaveConfigEnv>();
     const fullConfig = useAtomValue(env.atoms.fullConfigAtom);
     const sendAltShortcutsToTerminal = fullConfig?.settings?.["app:altnumbertoterminal"] ?? false;
+    const ctrlClickMovesCursor = fullConfig?.settings?.["term:ctrlclickmovescursor"] ?? false;
 
     const setSendAltShortcutsToTerminal = (enabled: boolean) => {
         fireAndForget(async () => {
             await env.rpc.SetConfigCommand(TabRpcClient, { "app:altnumbertoterminal": enabled });
+            model.loadFile(model.getConfigFiles()[0]);
+        });
+    };
+
+    const setCtrlClickMovesCursor = (enabled: boolean) => {
+        fireAndForget(async () => {
+            await env.rpc.SetConfigCommand(TabRpcClient, { "term:ctrlclickmovescursor": enabled });
             model.loadFile(model.getConfigFiles()[0]);
         });
     };
@@ -54,6 +62,12 @@ function GeneralSettingsVisual({ model }: { model: WaveConfigViewModel }) {
                 label="Send Alt shortcuts to terminal"
                 description="On Windows, send Alt+0 through Alt+9 and Alt+Q through Alt+P to the focused terminal instead of Wave app shortcuts."
                 onChange={setSendAltShortcutsToTerminal}
+            />
+            <SettingsToggle
+                checked={ctrlClickMovesCursor}
+                label="Ctrl-click moves terminal cursor"
+                description="Send left and right arrow keys when Ctrl-clicking within the current terminal input row."
+                onChange={setCtrlClickMovesCursor}
             />
         </div>
     );

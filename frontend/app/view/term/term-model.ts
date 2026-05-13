@@ -921,6 +921,8 @@ export class TermViewModel implements ViewModel {
         const curThemeName = globalStore.get(getBlockMetaKeyAtom(this.blockId, "term:theme"));
         const defaultFontSize = globalStore.get(getSettingsKeyAtom("term:fontsize")) ?? 12;
         const defaultAllowBracketedPaste = globalStore.get(getSettingsKeyAtom("term:allowbracketedpaste")) ?? true;
+        const defaultCtrlClickMovesCursor =
+            globalStore.get(getSettingsKeyAtom("term:ctrlclickmovescursor")) ?? false;
         const transparencyMeta = globalStore.get(getBlockMetaKeyAtom(this.blockId, "term:transparency"));
         const blockData = globalStore.get(this.blockAtom);
         const overrideFontSize = blockData?.meta?.["term:fontsize"];
@@ -1192,6 +1194,7 @@ export class TermViewModel implements ViewModel {
         fullMenu.push({ type: "separator" });
         const advancedSubmenu: ContextMenuItem[] = [];
         const allowBracketedPaste = blockData?.meta?.["term:allowbracketedpaste"];
+        const ctrlClickMovesCursor = blockData?.meta?.["term:ctrlclickmovescursor"];
         advancedSubmenu.push({
             label: "Allow Bracketed Paste Mode",
             submenu: [
@@ -1225,6 +1228,44 @@ export class TermViewModel implements ViewModel {
                         RpcApi.SetMetaCommand(TabRpcClient, {
                             oref: WOS.makeORef("block", this.blockId),
                             meta: { "term:allowbracketedpaste": false },
+                        });
+                    },
+                },
+            ],
+        });
+        advancedSubmenu.push({
+            label: "Ctrl-Click Moves Cursor",
+            submenu: [
+                {
+                    label: "Default (" + (defaultCtrlClickMovesCursor ? "On" : "Off") + ")",
+                    type: "checkbox",
+                    checked: ctrlClickMovesCursor == null,
+                    click: () => {
+                        RpcApi.SetMetaCommand(TabRpcClient, {
+                            oref: WOS.makeORef("block", this.blockId),
+                            meta: { "term:ctrlclickmovescursor": null },
+                        });
+                    },
+                },
+                {
+                    label: "On",
+                    type: "checkbox",
+                    checked: ctrlClickMovesCursor === true,
+                    click: () => {
+                        RpcApi.SetMetaCommand(TabRpcClient, {
+                            oref: WOS.makeORef("block", this.blockId),
+                            meta: { "term:ctrlclickmovescursor": true },
+                        });
+                    },
+                },
+                {
+                    label: "Off",
+                    type: "checkbox",
+                    checked: ctrlClickMovesCursor === false,
+                    click: () => {
+                        RpcApi.SetMetaCommand(TabRpcClient, {
+                            oref: WOS.makeORef("block", this.blockId),
+                            meta: { "term:ctrlclickmovescursor": false },
                         });
                     },
                 },
