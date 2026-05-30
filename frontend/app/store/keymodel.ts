@@ -764,6 +764,7 @@ function registerGlobalKeys() {
             return true;
         });
     }
+
     function activateSearch(event: WaveKeyboardEvent): boolean {
         const bcm = getBlockComponentModel(getFocusedBlockInStaticTab());
         // Ctrl+f is reserved in most shells
