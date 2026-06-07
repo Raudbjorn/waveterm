@@ -530,6 +530,7 @@ func serverRunRouterTCP(jwtToken string) error {
 	wshfs.RpcClient = client
 	wshfs.RpcClientRouteId = bareRouteId
 
+
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("serverRunRouterTCP:runListener", recover())
