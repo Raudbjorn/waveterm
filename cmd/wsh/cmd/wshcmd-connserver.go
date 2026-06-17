@@ -362,20 +362,25 @@ func serverRunRouterDomainSocket(jwtToken string) error {
 	}
 	log.Printf("got JWT public key")
 
-	// now setup the connserver rpc client
-	client, bareRouteId, err := setupConnServerRpcClientWithRouter(router, sockName)
+	// the local unix-socket listener is what clients will reach us through
+	// (the symlink in ConnServerInitCommand points at this path). Set it up
+	// before wiring the RPC client so its sockName is valid.
+	unixListener, err := MakeRemoteUnixListener()
+	if err != nil {
+		return fmt.Errorf("cannot create unix listener: %v", err)
+	}
+	log.Printf("unix listener started")
+
+	// now setup the connserver rpc client; the SockName we hand it is the
+	// local listener path, not the upstream socket (the upstream path lives
+	// only on the remote host and is useless for the client-side symlink).
+	client, bareRouteId, err := setupConnServerRpcClientWithRouter(router, getRemoteDomainSocketName())
 	if err != nil {
 		return fmt.Errorf("error setting up connserver rpc client: %v", err)
 	}
 	wshfs.RpcClient = client
 	wshfs.RpcClientRouteId = bareRouteId
 
-	// set up the local domain socket listener for local wsh commands
-	unixListener, err := MakeRemoteUnixListener()
-	if err != nil {
-		return fmt.Errorf("cannot create unix listener: %v", err)
-	}
-	log.Printf("unix listener started")
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("serverRunRouterDomainSocket:runListener", recover())
@@ -406,7 +411,7 @@ func serverRunRouterTCP(jwtToken string) error {
 	}
 
 	// connect to the forwarded tcp port
-	conn, err := net.Dial("tcp", tcpAddr)
+	conn, err := net.DialTimeout("tcp", tcpAddr, 10*time.Second)
 	if err != nil {
 		return fmt.Errorf("error connecting to tcp upstream %s: %v", tcpAddr, err)
 	}
@@ -470,20 +475,26 @@ func serverRunRouterTCP(jwtToken string) error {
 	}
 	log.Printf("got JWT public key")
 
-	// now setup the connserver rpc client
-	client, bareRouteId, err := setupConnServerRpcClientWithRouter(router, tcpAddr)
+	// the local unix-socket listener is what clients will reach us through
+	// (the symlink in ConnServerInitCommand points at this path). Set it up
+	// before wiring the RPC client so its sockName is valid. We deliberately
+	// do NOT pass `tcpAddr` here: that is the remote-loopback endpoint, which
+	// has no meaning as a symlink target on the client machine.
+	unixListener, err := MakeRemoteUnixListener()
+	if err != nil {
+		return fmt.Errorf("cannot create unix listener: %v", err)
+	}
+	log.Printf("unix listener started")
+
+	// now setup the connserver rpc client; the SockName we hand it is the
+	// local listener path, not the TCP upstream address.
+	client, bareRouteId, err := setupConnServerRpcClientWithRouter(router, getRemoteDomainSocketName())
 	if err != nil {
 		return fmt.Errorf("error setting up connserver rpc client: %v", err)
 	}
 	wshfs.RpcClient = client
 	wshfs.RpcClientRouteId = bareRouteId
 
-	// set up the local domain socket listener for local wsh commands
-	unixListener, err := MakeRemoteUnixListener()
-	if err != nil {
-		return fmt.Errorf("cannot create unix listener: %v", err)
-	}
-	log.Printf("unix listener started")
 	go func() {
 		defer func() {
 			panichandler.PanicHandler("serverRunRouterTCP:runListener", recover())
