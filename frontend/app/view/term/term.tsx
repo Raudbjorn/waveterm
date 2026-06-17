@@ -197,6 +197,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
     const connFontFamily = fullConfig.connections?.[blockData?.meta?.connection]?.["term:fontfamily"];
     const isFocused = jotai.useAtomValue(model.nodeModel.isFocused);
     const isMI = jotai.useAtomValue(tabModel.isTermMultiInput);
+    const ctrlClickMovesCursor = jotai.useAtomValue(getOverrideConfigAtom(blockId, "term:ctrlclickmovescursor"));
     const isBasicTerm = termMode != "vdom" && blockData?.meta?.controller != "cmd"; // needs to match isBasicTerm
 
     // search
@@ -317,6 +318,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
                 keydownHandler: model.handleTerminalKeydown.bind(model),
                 useWebGl: !termSettings?.["term:disablewebgl"],
                 sendDataHandler: model.sendDataToController.bind(model),
+                ctrlClickMovesCursor: ctrlClickMovesCursor ?? false,
                 nodeModel: model.nodeModel,
             }
         );
@@ -342,7 +344,7 @@ const TerminalView = ({ blockId, model }: ViewComponentProps<TermViewModel>) => 
             rszObs.disconnect();
             setTermWrapInst(null);
         };
-    }, [blockId, termSettings, termFontSize, connFontFamily]);
+    }, [blockId, termSettings, termFontSize, connFontFamily, ctrlClickMovesCursor]);
 
     React.useEffect(() => {
         if (termModeRef.current == "vdom" && termMode == "term") {

@@ -35,6 +35,9 @@
         "app:disablectrlshiftdisplay": {
           "type": "boolean"
         },
+        "app:altnumbertoterminal": {
+          "type": "boolean"
+        },
         "app:focusfollowscursor": {
           "type": "string",
           "enum": [
@@ -144,6 +147,9 @@
           "type": "boolean"
         },
         "term:macoptionismeta": {
+          "type": "boolean"
+        },
+        "term:ctrlclickmovescursor": {
           "type": "boolean"
         },
         "term:cursor": {

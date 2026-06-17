@@ -102,8 +102,8 @@ type MetaTSType struct {
 	BgActiveBorderColor string  `json:"bg:activebordercolor,omitempty"` // frame:activebordercolor
 
 	// for workspace
-	LayoutVTabBarWidth      int  `json:"layout:vtabbarwidth,omitempty"`
-	LayoutWidgetsVisible    *bool `json:"layout:widgetsvisible,omitempty"`
+	LayoutVTabBarWidth   int   `json:"layout:vtabbarwidth,omitempty"`
+	LayoutWidgetsVisible *bool `json:"layout:widgetsvisible,omitempty"`
 
 	// for tabs+waveai
 	WaveAiPanelOpen     bool   `json:"waveai:panelopen,omitempty"`
@@ -112,27 +112,28 @@ type MetaTSType struct {
 	WaveAiChatId        string `json:"waveai:chatid,omitempty"`
 	WaveAiWidgetContext *bool  `json:"waveai:widgetcontext,omitempty"` // default is true
 
-	TermClear               bool     `json:"term:*,omitempty"`
-	TermFontSize            int      `json:"term:fontsize,omitempty"`
-	TermFontFamily          string   `json:"term:fontfamily,omitempty"`
-	TermMode                string   `json:"term:mode,omitempty"`
-	TermTheme               string   `json:"term:theme,omitempty"`
-	TermLocalShellPath      string   `json:"term:localshellpath,omitempty"` // matches settings
-	TermLocalShellOpts      []string `json:"term:localshellopts,omitempty"` // matches settings
-	TermScrollback          *int     `json:"term:scrollback,omitempty"`
-	TermVDomSubBlockId      string   `json:"term:vdomblockid,omitempty"`
-	TermVDomToolbarBlockId  string   `json:"term:vdomtoolbarblockid,omitempty"`
-	TermTransparency        *float64 `json:"term:transparency,omitempty"` // default 0.5
-	TermAllowBracketedPaste *bool    `json:"term:allowbracketedpaste,omitempty"`
-	TermShiftEnterNewline   *bool    `json:"term:shiftenternewline,omitempty"`
-	TermMacOptionIsMeta     *bool    `json:"term:macoptionismeta,omitempty"`
-	TermCursor              string   `json:"term:cursor,omitempty"`
-	TermCursorBlink         *bool    `json:"term:cursorblink,omitempty"`
-	TermConnDebug           string   `json:"term:conndebug,omitempty"` // null, info, debug
-	TermBellSound           *bool    `json:"term:bellsound,omitempty"`
-	TermBellIndicator       *bool    `json:"term:bellindicator,omitempty"`
-	TermOsc52               string   `json:"term:osc52,omitempty"`
-	TermDurable             *bool    `json:"term:durable,omitempty"`
+	TermClear                bool     `json:"term:*,omitempty"`
+	TermFontSize             int      `json:"term:fontsize,omitempty"`
+	TermFontFamily           string   `json:"term:fontfamily,omitempty"`
+	TermMode                 string   `json:"term:mode,omitempty"`
+	TermTheme                string   `json:"term:theme,omitempty"`
+	TermLocalShellPath       string   `json:"term:localshellpath,omitempty"` // matches settings
+	TermLocalShellOpts       []string `json:"term:localshellopts,omitempty"` // matches settings
+	TermScrollback           *int     `json:"term:scrollback,omitempty"`
+	TermVDomSubBlockId       string   `json:"term:vdomblockid,omitempty"`
+	TermVDomToolbarBlockId   string   `json:"term:vdomtoolbarblockid,omitempty"`
+	TermTransparency         *float64 `json:"term:transparency,omitempty"` // default 0.5
+	TermAllowBracketedPaste  *bool    `json:"term:allowbracketedpaste,omitempty"`
+	TermShiftEnterNewline    *bool    `json:"term:shiftenternewline,omitempty"`
+	TermMacOptionIsMeta      *bool    `json:"term:macoptionismeta,omitempty"`
+	TermCtrlClickMovesCursor *bool    `json:"term:ctrlclickmovescursor,omitempty"`
+	TermCursor               string   `json:"term:cursor,omitempty"`
+	TermCursorBlink          *bool    `json:"term:cursorblink,omitempty"`
+	TermConnDebug            string   `json:"term:conndebug,omitempty"` // null, info, debug
+	TermBellSound            *bool    `json:"term:bellsound,omitempty"`
+	TermBellIndicator        *bool    `json:"term:bellindicator,omitempty"`
+	TermOsc52                string   `json:"term:osc52,omitempty"`
+	TermDurable              *bool    `json:"term:durable,omitempty"`
 
 	WebZoom          float64 `json:"web:zoom,omitempty"`
 	WebHideNav       *bool   `json:"web:hidenav,omitempty"`

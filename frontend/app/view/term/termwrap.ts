@@ -52,6 +52,7 @@ const TermCacheFileName = "cache:term:full";
 const MinDataProcessedForCache = 100 * 1024;
 export const SupportsImageInput = true;
 const MaxRepaintTransactionMs = 2000;
+const CtrlClickCursorMoveChunkSize = 64;
 
 // detect webgl support
 function detectWebGLSupport(): boolean {
@@ -71,7 +72,26 @@ type TermWrapOptions = {
     keydownHandler?: (e: KeyboardEvent) => boolean;
     useWebGl?: boolean;
     sendDataHandler?: (data: string) => void;
+    ctrlClickMovesCursor?: boolean;
     nodeModel?: BlockNodeModel;
+};
+
+type XTermMouseCoords = {
+    col: number;
+    row: number;
+};
+
+type XTermMouseService = {
+    getMouseReportCoords?: (event: MouseEvent, element: HTMLElement) => XTermMouseCoords | undefined;
+};
+
+type XTermCore = {
+    screenElement?: HTMLElement;
+    _mouseService?: XTermMouseService;
+};
+
+type XTermWithCore = Terminal & {
+    _core?: XTermCore;
 };
 
 export class TermWrap {
@@ -91,6 +111,7 @@ export class TermWrap {
     hasResized: boolean;
     multiInputCallback: (data: string) => void;
     sendDataHandler: (data: string) => void;
+    ctrlClickMovesCursor: boolean;
     onSearchResultsDidChange?: (result: { resultIndex: number; resultCount: number }) => void;
     toDispose: TermTypes.IDisposable[] = [];
     webglAddon: WebglAddon | null = null;
@@ -99,12 +120,17 @@ export class TermWrap {
     pasteActive: boolean = false;
     lastUpdated: number;
     promptMarkers: TermTypes.IMarker[] = [];
+    promptInputStartCols: Map<TermTypes.IMarker, number> = new Map();
     shellIntegrationStatusAtom: jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
     lastCommandAtom: jotai.PrimitiveAtom<string | null>;
     claudeCodeActiveAtom: jotai.PrimitiveAtom<boolean>;
     nodeModel: BlockNodeModel; // this can be null
     hoveredLinkUri: string | null = null;
     onLinkHover?: (uri: string | null, mouseX: number, mouseY: number) => void;
+    controlKeyDown: boolean = false;
+    ctrlClickMouseDownTs: number = 0;
+    lastCtrlClickMoveTs: number = 0;
+    ctrlClickMoveTimeouts: ReturnType<typeof setTimeout>[] = [];
 
     // Paste deduplication
     // xterm.js paste() method triggers onData event, which can cause duplicate sends
@@ -133,12 +159,14 @@ export class TermWrap {
         this.tabId = tabId;
         this.blockId = blockId;
         this.sendDataHandler = waveOptions.sendDataHandler;
+        this.ctrlClickMovesCursor = waveOptions.ctrlClickMovesCursor ?? false;
         this.nodeModel = waveOptions.nodeModel;
         this.ptyOffset = 0;
         this.dataBytesProcessed = 0;
         this.hasResized = false;
         this.lastUpdated = Date.now();
         this.promptMarkers = [];
+        this.promptInputStartCols = new Map();
         this.shellIntegrationStatusAtom = jotai.atom(null) as jotai.PrimitiveAtom<ShellIntegrationStatus | null>;
         this.lastCommandAtom = jotai.atom(null) as jotai.PrimitiveAtom<string | null>;
         this.claudeCodeActiveAtom = jotai.atom(false);
@@ -314,6 +342,28 @@ export class TermWrap {
                 this.connectElem.removeEventListener("drop", dropHandler);
             },
         });
+        const mouseDownHandler = this.handleMouseDown.bind(this);
+        const mouseUpHandler = this.handleMouseUp.bind(this);
+        const clickHandler = this.handleClick.bind(this);
+        const keyDownHandler = this.handleModifierKeyDown.bind(this);
+        const keyUpHandler = this.handleModifierKeyUp.bind(this);
+        const blurHandler = this.handleModifierBlur.bind(this);
+        this.connectElem.addEventListener("mousedown", mouseDownHandler, true);
+        this.connectElem.addEventListener("mouseup", mouseUpHandler, true);
+        this.connectElem.addEventListener("click", clickHandler, true);
+        window.addEventListener("keydown", keyDownHandler, true);
+        window.addEventListener("keyup", keyUpHandler, true);
+        window.addEventListener("blur", blurHandler);
+        this.toDispose.push({
+            dispose: () => {
+                this.connectElem.removeEventListener("mousedown", mouseDownHandler, true);
+                this.connectElem.removeEventListener("mouseup", mouseUpHandler, true);
+                this.connectElem.removeEventListener("click", clickHandler, true);
+                window.removeEventListener("keydown", keyDownHandler, true);
+                window.removeEventListener("keyup", keyUpHandler, true);
+                window.removeEventListener("blur", blurHandler);
+            },
+        });
         this.handleResize();
         const pasteHandler = this.pasteHandler.bind(this);
         this.connectElem.addEventListener("paste", pasteHandler, true);
@@ -450,6 +500,8 @@ export class TermWrap {
             }
         });
         this.promptMarkers = [];
+        this.promptInputStartCols.clear();
+        this.clearPendingCtrlClickCursorMove();
         this.webglContextLossDisposable?.dispose();
         this.webglContextLossDisposable = null;
         this.terminal.dispose();
@@ -470,6 +522,203 @@ export class TermWrap {
 
         this.sendDataHandler?.(data);
         this.multiInputCallback?.(data);
+    }
+
+    handleMouseDown(e: MouseEvent) {
+        if (!this.shouldHandleCtrlClickCursorMove(e)) {
+            return;
+        }
+        this.ctrlClickMouseDownTs = e.timeStamp;
+        this.terminal.focus();
+        this.terminal.clearSelection();
+        this.cancelCtrlClickMouseEvent(e);
+    }
+
+    handleMouseUp(e: MouseEvent) {
+        if (this.ctrlClickMouseDownTs == 0) {
+            return;
+        }
+        const timeElapsed = e.timeStamp - this.ctrlClickMouseDownTs;
+        this.ctrlClickMouseDownTs = 0;
+        if (timeElapsed > 500 || !this.shouldHandleCtrlClickCursorMove(e)) {
+            return;
+        }
+        this.handleCtrlClickCursorMove(e);
+    }
+
+    handleClick(e: MouseEvent) {
+        if (e.timeStamp - this.lastCtrlClickMoveTs < 250) {
+            return;
+        }
+        this.handleCtrlClickCursorMove(e);
+    }
+
+    handleModifierKeyDown(e: KeyboardEvent) {
+        if (e.key == "Control") {
+            this.controlKeyDown = true;
+        }
+    }
+
+    handleModifierKeyUp(e: KeyboardEvent) {
+        if (e.key == "Control") {
+            this.controlKeyDown = false;
+        }
+    }
+
+    handleModifierBlur() {
+        this.controlKeyDown = false;
+    }
+
+    handleCtrlClickCursorMove(e: MouseEvent): boolean {
+        if (!this.shouldHandleCtrlClickCursorMove(e)) {
+            return false;
+        }
+        const target = this.getClickedTerminalCell(e);
+        if (target == null) {
+            return false;
+        }
+        const buffer = this.terminal.buffer.active;
+        const delta = this.getCtrlClickCursorDelta(target);
+        if (delta == null) {
+            return false;
+        }
+        this.cancelCtrlClickMouseEvent(e);
+        this.lastCtrlClickMoveTs = e.timeStamp;
+        if (delta == 0) {
+            return true;
+        }
+        this.sendCursorMove(delta);
+        return true;
+    }
+
+    shouldHandleCtrlClickCursorMove(e: MouseEvent): boolean {
+        if (!this.isCtrlClickMovesCursorEnabled()) {
+            return false;
+        }
+        const isControlDown = e.ctrlKey || e.getModifierState?.("Control") || this.controlKeyDown;
+        if (e.button != 0 || !isControlDown || e.altKey || e.shiftKey || e.metaKey) {
+            return false;
+        }
+        return this.terminal.buffer.active.type != "alternate";
+    }
+
+    cancelCtrlClickMouseEvent(e: MouseEvent) {
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+    }
+
+    isCtrlClickMovesCursorEnabled(): boolean {
+        return globalStore.get(getOverrideConfigAtom(this.blockId, "term:ctrlclickmovescursor")) ?? this.ctrlClickMovesCursor;
+    }
+
+    sendCursorMove(delta: number) {
+        this.clearPendingCtrlClickCursorMove();
+        const isRight = delta > 0;
+        const seq = this.terminal.modes.applicationCursorKeysMode
+            ? isRight
+                ? "\x1bOC"
+                : "\x1bOD"
+            : isRight
+              ? "\x1b[C"
+              : "\x1b[D";
+        const moveCount = Math.abs(delta);
+        for (let sentCount = 0; sentCount < moveCount; sentCount += CtrlClickCursorMoveChunkSize) {
+            const chunkCount = Math.min(CtrlClickCursorMoveChunkSize, moveCount - sentCount);
+            const chunkData = seq.repeat(chunkCount);
+            if (sentCount == 0) {
+                this.handleTermData(chunkData);
+                continue;
+            }
+            const timeout = setTimeout(() => {
+                this.ctrlClickMoveTimeouts = this.ctrlClickMoveTimeouts.filter((pendingTimeout) => pendingTimeout !== timeout);
+                this.handleTermData(chunkData);
+            }, sentCount / CtrlClickCursorMoveChunkSize);
+            this.ctrlClickMoveTimeouts.push(timeout);
+        }
+    }
+
+    clearPendingCtrlClickCursorMove() {
+        this.ctrlClickMoveTimeouts.forEach((timeout) => clearTimeout(timeout));
+        this.ctrlClickMoveTimeouts = [];
+    }
+
+    getCtrlClickCursorDelta(target: { col: number; row: number }): number | null {
+        const buffer = this.terminal.buffer.active;
+        const cursorViewportRow = buffer.baseY + buffer.cursorY - buffer.viewportY;
+        if (cursorViewportRow < 0 || cursorViewportRow >= this.terminal.rows) {
+            return null;
+        }
+        const currentPromptMarker = this.promptMarkers[this.promptMarkers.length - 1];
+        // the prompt marker can be pruned from scrollback; its line then
+        // becomes -1. Fall back to the non-marker offset in that case.
+        if (currentPromptMarker == null || currentPromptMarker.line === -1) {
+            return (target.row - cursorViewportRow) * this.terminal.cols + target.col - buffer.cursorX;
+        }
+        const targetBufferRow = buffer.viewportY + target.row;
+        const cursorBufferRow = buffer.baseY + buffer.cursorY;
+        const inputStartCol = this.promptInputStartCols.get(currentPromptMarker) ?? 0;
+        const targetOffset = this.getCtrlClickInputOffset(targetBufferRow, target.col, currentPromptMarker.line, inputStartCol);
+        const cursorOffset = this.getCtrlClickInputOffset(cursorBufferRow, buffer.cursorX, currentPromptMarker.line, inputStartCol);
+        if (targetOffset == null || cursorOffset == null) {
+            return null;
+        }
+        return targetOffset - cursorOffset;
+    }
+
+    getCtrlClickInputOffset(
+        bufferRow: number,
+        col: number,
+        inputStartBufferRow: number,
+        inputStartCol: number
+    ): number | null {
+        const rowDelta = bufferRow - inputStartBufferRow;
+        if (rowDelta < 0 || (rowDelta == 0 && col < inputStartCol)) {
+            return null;
+        }
+        return rowDelta * this.terminal.cols + col - inputStartCol;
+    }
+
+    getClickedTerminalCell(e: MouseEvent): { col: number; row: number } | null {
+        const screenElem = this.getXTermScreenElement();
+        if (screenElem == null || !this.isMouseEventInsideElement(e, screenElem)) {
+            return null;
+        }
+
+        const core = (this.terminal as XTermWithCore)._core;
+        const reportCoords = core?._mouseService?.getMouseReportCoords?.(e, screenElem);
+        if (reportCoords != null) {
+            return this.clampTerminalCell(reportCoords);
+        }
+
+        const rect = screenElem.getBoundingClientRect();
+        const col = Math.floor(((e.clientX - rect.left) / rect.width) * this.terminal.cols);
+        const row = Math.floor(((e.clientY - rect.top) / rect.height) * this.terminal.rows);
+        return this.clampTerminalCell({ col, row });
+    }
+
+    getXTermScreenElement(): HTMLElement | null {
+        const core = (this.terminal as XTermWithCore)._core;
+        if (core?.screenElement instanceof HTMLElement) {
+            return core.screenElement;
+        }
+        const screenElem = this.terminal.element?.querySelector(".xterm-screen");
+        return screenElem instanceof HTMLElement ? screenElem : null;
+    }
+
+    isMouseEventInsideElement(e: MouseEvent, elem: HTMLElement): boolean {
+        const rect = elem.getBoundingClientRect();
+        if (rect.width <= 0 || rect.height <= 0) {
+            return false;
+        }
+        return e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom;
+    }
+
+    clampTerminalCell(cell: XTermMouseCoords): { col: number; row: number } {
+        return {
+            col: Math.max(0, Math.min(this.terminal.cols - 1, Math.floor(cell.col))),
+            row: Math.max(0, Math.min(this.terminal.rows - 1, Math.floor(cell.row))),
+        };
     }
 
     addFocusListener(focusFn: () => void) {

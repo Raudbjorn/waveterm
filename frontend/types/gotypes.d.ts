@@ -1183,6 +1183,7 @@ declare global {
         "term:allowbracketedpaste"?: boolean;
         "term:shiftenternewline"?: boolean;
         "term:macoptionismeta"?: boolean;
+        "term:ctrlclickmovescursor"?: boolean;
         "term:cursor"?: string;
         "term:cursorblink"?: boolean;
         "term:conndebug"?: string;
@@ -1385,6 +1386,7 @@ declare global {
         "app:hideaibutton"?: boolean;
         "app:disablectrlshiftarrows"?: boolean;
         "app:disablectrlshiftdisplay"?: boolean;
+        "app:altnumbertoterminal"?: boolean;
         "app:focusfollowscursor"?: string;
         "app:tabbar"?: string;
         "feature:waveappbuilder"?: boolean;
@@ -1418,6 +1420,7 @@ declare global {
         "term:allowbracketedpaste"?: boolean;
         "term:shiftenternewline"?: boolean;
         "term:macoptionismeta"?: boolean;
+        "term:ctrlclickmovescursor"?: boolean;
         "term:cursor"?: string;
         "term:cursorblink"?: boolean;
         "term:bellsound"?: boolean;
@@ -1589,6 +1592,7 @@ declare global {
         "debug:panictype"?: string;
         "block:view"?: string;
         "block:controller"?: string;
+        "block:subblock"?: boolean;
         "ai:backendtype"?: string;
         "ai:local"?: boolean;
         "wsh:cmd"?: string;

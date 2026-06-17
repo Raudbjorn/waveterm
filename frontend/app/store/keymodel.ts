@@ -33,6 +33,41 @@ import { isBuilderWindow, isTabWindow } from "./windowtype";
 
 type KeyHandler = (event: WaveKeyboardEvent) => boolean;
 
+const AltShortcutTerminalCodes = new Set([
+    "Digit0",
+    "Digit1",
+    "Digit2",
+    "Digit3",
+    "Digit4",
+    "Digit5",
+    "Digit6",
+    "Digit7",
+    "Digit8",
+    "Digit9",
+    "Numpad0",
+    "Numpad1",
+    "Numpad2",
+    "Numpad3",
+    "Numpad4",
+    "Numpad5",
+    "Numpad6",
+    "Numpad7",
+    "Numpad8",
+    "Numpad9",
+    "KeyQ",
+    "KeyW",
+    "KeyE",
+    "KeyR",
+    "KeyT",
+    "KeyY",
+    "KeyU",
+    "KeyI",
+    "KeyO",
+    "KeyP",
+]);
+
+const AltShortcutTerminalKeys = new Set(["0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p"]);
+
 const simpleControlShiftAtom = jotai.atom(false);
 const globalKeyMap = new Map<string, (waveEvent: WaveKeyboardEvent) => boolean>();
 const globalChordMap = new Map<string, Map<string, KeyHandler>>();
@@ -422,6 +457,9 @@ function appHandleKeyDown(waveEvent: WaveKeyboardEvent): boolean {
         return false;
     }
     lastHandledEvent = nativeEvent;
+    if (shouldSendAltShortcutToTerminal(waveEvent)) {
+        return false;
+    }
     if (activeChord) {
         console.log("handle activeChord", activeChord);
         // If we're in chord mode, look for the second key.
@@ -498,6 +536,22 @@ function countTermBlocks(): number {
         }
     }
     return count;
+}
+
+function shouldSendAltShortcutsToTerminal(): boolean {
+    // coalesce to false when the setting is unset — globalStore.get may
+    // return undefined for unset atoms, and the call sites expect a boolean
+    return isWindows() && !!globalStore.get(getSettingsKeyAtom("app:altnumbertoterminal"));
+}
+
+function shouldSendAltShortcutToTerminal(waveEvent: WaveKeyboardEvent): boolean {
+    if (!shouldSendAltShortcutsToTerminal()) {
+        return false;
+    }
+    if (!waveEvent.alt || waveEvent.control || waveEvent.meta || waveEvent.shift) {
+        return false;
+    }
+    return AltShortcutTerminalCodes.has(waveEvent.code) || AltShortcutTerminalKeys.has(waveEvent.key?.toLowerCase());
 }
 
 function registerGlobalKeys() {
@@ -669,7 +723,10 @@ function registerGlobalKeys() {
         return true;
     });
     for (let idx = 1; idx <= 9; idx++) {
-        globalKeyMap.set(`Cmd:${idx}`, () => {
+        globalKeyMap.set(`Cmd:${idx}`, (_event: WaveKeyboardEvent) => {
+            // the inner shouldSendAltShortcutToTerminal check is dead: a Cmd
+            // event always has control or meta pressed, which short-circuits
+            // shouldSendAltShortcutToTerminal to false. The check is removed.
             switchTabAbs(idx);
             return true;
         });
@@ -683,11 +740,17 @@ function registerGlobalKeys() {
         });
     }
     if (isWindows()) {
-        globalKeyMap.set("Alt:c{Digit0}", () => {
+        globalKeyMap.set("Alt:c{Digit0}", (event: WaveKeyboardEvent) => {
+            if (shouldSendAltShortcutToTerminal(event)) {
+                return false;
+            }
             WaveAIModel.getInstance().focusInput();
             return true;
         });
-        globalKeyMap.set("Alt:c{Numpad0}", () => {
+        globalKeyMap.set("Alt:c{Numpad0}", (event: WaveKeyboardEvent) => {
+            if (shouldSendAltShortcutToTerminal(event)) {
+                return false;
+            }
             WaveAIModel.getInstance().focusInput();
             return true;
         });

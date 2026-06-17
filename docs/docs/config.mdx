@@ -45,6 +45,7 @@ wsh editconfig
 | app:disablectrlshiftdisplay <VersionBadge version="v0.14" />         | bool     | Set to true to disable the Ctrl+Shift visual indicator display (defaults to false)                                                                                                                                                                            |
 | app:focusfollowscursor <VersionBadge version="v0.14" />              | string   | Controls whether block focus follows cursor movement: `"off"` (default), `"on"` (all blocks), or `"term"` (terminal blocks only)                                                                                                                             |
 | app:tabbar <VersionBadge version="v0.14.4" />                        | string   | Controls the position of the tab bar: `"top"` (default) for a horizontal tab bar at the top of the window, or `"left"` for a vertical tab bar on the left side of the window                                                                                |
+| app:altnumbertoterminal <VersionBadge version="v0.15" />            | bool     | Set to true to send Alt+number and Alt+Q through Alt+P key combinations to the focused terminal instead of app shortcuts (defaults to false, Windows only)                                                                                                  |
 | ai:preset                            | string   | the default AI preset to use                                                                                                                                                                                                                                  |
 | ai:baseurl                           | string   | Set the AI Base Url (must be OpenAI compatible)                                                                                                                                                                                                               |
 | ai:apitoken                          | string   | your AI api token                                                                                                                                                                                                                                             |
@@ -70,6 +71,7 @@ wsh editconfig
 | term:allowbracketedpaste             | bool     | allow bracketed paste mode in terminal (default false)                                                                                                                                                                                                        |
 | term:shiftenternewline               | bool     | when enabled, Shift+Enter sends escape sequence + newline (\u001b\n) instead of carriage return, useful for claude code and similar AI coding tools (default false)                                                                                         |
 | term:macoptionismeta                 | bool     | on macOS, treat the Option key as Meta key for terminal keybindings (default false)                                                                                                                                                                          |
+| term:ctrlclickmovescursor <VersionBadge version="v0.15" /> | bool     | when enabled, Ctrl+click in a terminal sends left/right arrow keys to move the shell cursor within the current input row (default false)                                                                                                                       |
 | term:cursor <VersionBadge version="v0.14" />                        | string   | terminal cursor style. valid values are `block` (default), `underline`, and `bar`                                                                                                                                                                            |
 | term:cursorblink <VersionBadge version="v0.14" />                   | bool     | when enabled, terminal cursor blinks (default false)                                                                                                                                                                                                          |
 | term:bellsound <VersionBadge version="v0.14" />                      | bool     | when enabled, plays the system beep sound when the terminal bell (BEL character) is received (default false)                                                                                                                                                  |
@@ -117,7 +119,7 @@ wsh editconfig
 | window:dimensions                    | string   | set the default dimensions for new windows using the format "WIDTHxHEIGHT" (e.g. "1920x1080"). when a new window is created, these dimensions will be automatically applied. The width and height values should be specified in pixels.                       |
 | telemetry:enabled                    | bool     | set to enable/disable telemetry                                                                                                                                                                                                                               |
 
-For reference, this is the current default configuration (v0.14.0):
+For reference, this is the current default configuration (v0.15.0):
 
 ```json
 {
@@ -153,6 +155,7 @@ For reference, this is the current default configuration (v0.14.0):
     "term:bellsound": false,
     "term:bellindicator": false,
     "term:osc52": "always",
+    "term:ctrlclickmovescursor": false,
     "term:cursor": "block",
     "term:cursorblink": false,
     "term:copyonselect": true,
