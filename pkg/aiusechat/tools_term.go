@@ -20,6 +20,24 @@ import (
 	"github.com/wavetermdev/waveterm/pkg/wstore"
 )
 
+const (
+	// maxCommandBytes caps term_send_command input. The base64-encoded form
+	// adds ~33% overhead on the wire; 64 KiB raw keeps the RPC payload well
+	// under 100 KiB and prevents a runaway model call from saturating the
+	// renderer.
+	maxCommandBytes = 64 * 1024
+	// maxScrollbackBytes caps the returned scrollback to prevent a single
+	// tool call from streaming gigabytes of history into the chat context.
+	maxScrollbackBytes = 1 * 1024 * 1024
+	// shellReadyPollInterval is how often term_send_command polls the shell
+	// state when wait_for_output is requested. The old fixed 2 s sleep
+	// wasted time on fast commands and truncated slow ones.
+	shellReadyPollInterval = 100 * time.Millisecond
+	// shellReadyMaxWait caps the polling loop so a hung shell can't pin the
+	// tool call forever. 5 s is a reasonable default for interactive use.
+	shellReadyMaxWait = 5 * time.Second
+)
+
 type TermGetScrollbackToolInput struct {
 	WidgetId  string `json:"widget_id"`
 	LineStart int    `json:"line_start,omitempty"`
@@ -191,6 +209,12 @@ func GetTermGetScrollbackToolDefinition(tabId string) uctypes.ToolDefinition {
 			lineEnd := parsed.LineStart + parsed.Count
 			return fmt.Sprintf("reading terminal output from %s (lines %d-%d)", parsed.WidgetId, parsed.LineStart, lineEnd)
 		},
+		ToolApproval: func(input any) string {
+			// Reading terminal output can leak secrets, file contents,
+			// or command history. Require user approval for every call,
+			// matching the gate on term_send_command.
+			return uctypes.ApprovalNeedsApproval
+		},
 		ToolAnyCallback: func(input any, toolUseData *uctypes.UIMessageDataToolUse) (any, error) {
 			parsed, err := parseTermGetScrollbackInput(input)
 			if err != nil {
@@ -266,6 +290,17 @@ func parseTermSendCommandInput(input any) (*TermSendCommandToolInput, error) {
 	if result.Command == "" {
 		return nil, fmt.Errorf("command is required")
 	}
+	// Reject embedded newlines. The terminal appends \r to the command and
+	// the cooked-mode line discipline submits the line on LF — so a \n in
+	// the input runs as two separate commands behind the user's back, even
+	// though the approval dialog shows them concatenated. Force the model
+	// to make a separate term_send_command call per command.
+	if strings.ContainsAny(result.Command, "\n\r") {
+		return nil, fmt.Errorf("command must not contain newlines or carriage returns (call term_send_command once per command)")
+	}
+	if len(result.Command) > maxCommandBytes {
+		return nil, fmt.Errorf("command exceeds %d-byte limit (got %d bytes)", maxCommandBytes, len(result.Command))
+	}
 	return result, nil
 }
 
@@ -339,7 +374,13 @@ func GetTermSendCommandToolDefinition(tabId string) uctypes.ToolDefinition {
 				waitForOutput = *parsed.WaitForOutput
 			}
 			if waitForOutput {
-				time.Sleep(2 * time.Second)
+				// Poll shell state instead of a fixed 2 s sleep. Fast
+				// commands (echo hi) return in one poll interval; slow
+				// commands (npm install) get up to 5 s of observation;
+				// hung shells time out cleanly.
+				if pollErr := waitForShellReady(fullBlockId); pollErr != nil {
+					return map[string]any{"sent": true, "output_read": false, "note": fmt.Sprintf("command sent; could not observe completion: %v", pollErr)}, nil
+				}
 				output, err := getTermScrollbackOutput(
 					tabId,
 					parsed.WidgetId,
@@ -349,13 +390,49 @@ func GetTermSendCommandToolDefinition(tabId string) uctypes.ToolDefinition {
 					},
 				)
 				if err != nil {
-					return map[string]any{"sent": true, "note": "command sent; could not read output"}, nil
+					// Surface as non-fatal output_read=false so the
+					// model can retry the scrollback via
+					// term_get_scrollback without re-executing.
+					return map[string]any{"sent": true, "output_read": false, "note": fmt.Sprintf("command sent; could not read output: %v", err)}, nil
 				}
-				return map[string]any{"sent": true, "output": output}, nil
+				// Cap returned scrollback so a runaway model call
+				// can't stream gigabytes of history into the chat
+				// context.
+				if len(output.Content) > maxScrollbackBytes {
+					output.Content = output.Content[:maxScrollbackBytes] +
+						fmt.Sprintf("\n... [truncated; full output exceeds %d bytes]", maxScrollbackBytes)
+				}
+				return map[string]any{"sent": true, "output_read": true, "output": output}, nil
 			}
 
 			return map[string]any{"sent": true}, nil
 		},
+	}
+}
+
+// waitForShellReady polls rtInfo.ShellState for the given block until the
+// shell reports "ready" (or shell integration is disabled) or the
+// shellReadyMaxWait deadline elapses. Replaces the previous fixed 2 s
+// sleep. Returns nil on success or an error if the deadline passed.
+func waitForShellReady(fullBlockId string) error {
+	blockORef := waveobj.MakeORef(waveobj.OType_Block, fullBlockId)
+	deadline := time.Now().Add(shellReadyMaxWait)
+	for {
+		rtInfo := wstore.GetRTInfo(blockORef)
+		// shell integration disabled -> we can't observe completion;
+		// give a single poll-interval grace and assume it ran.
+		if rtInfo == nil || !rtInfo.ShellIntegration {
+			time.Sleep(shellReadyPollInterval)
+			return nil
+		}
+		if rtInfo.ShellState == "ready" {
+			return nil
+		}
+		// "running-command" or unknown state: keep polling until deadline.
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %s waiting for shell to become ready", shellReadyMaxWait)
+		}
+		time.Sleep(shellReadyPollInterval)
 	}
 }
 
@@ -382,6 +459,13 @@ func GetTermCommandOutputToolDefinition(tabId string) uctypes.ToolDefinition {
 				return fmt.Sprintf("error parsing input: %v", err)
 			}
 			return fmt.Sprintf("reading last command output from %s", parsed.WidgetId)
+		},
+		ToolApproval: func(input any) string {
+			// Reading the last command's output can leak secrets
+			// passed on the command line (env, file paths). Require
+			// user approval, matching term_send_command and
+			// term_get_scrollback.
+			return uctypes.ApprovalNeedsApproval
 		},
 		ToolAnyCallback: func(input any, toolUseData *uctypes.UIMessageDataToolUse) (any, error) {
 			parsed, err := parseTermCommandOutputInput(input)
