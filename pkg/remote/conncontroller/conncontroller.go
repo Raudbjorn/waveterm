@@ -120,8 +120,22 @@ const (
 // back to the reverse-forwarded loopback port. Override at runtime with
 // WAVETERM_ROUTER_TRANSPORT=tcp (or =stdio) for A/B comparison.
 var RouterTransport = func() RouterTransportMode {
-	if strings.ToLower(os.Getenv("WAVETERM_ROUTER_TRANSPORT")) == "tcp" {
+	raw := os.Getenv("WAVETERM_ROUTER_TRANSPORT")
+	v := strings.ToLower(raw)
+	if v == "tcp" {
+		// Loud one-shot WARN: the TCP fallback downgrades the auth
+		// boundary from "SSH channel" to "JWT-authenticated reverse-
+		// forwarded loopback port". The stdio default is preferred
+		// because the SSH channel itself is the auth boundary and no
+		// listening socket/port is opened on the remote. Operators
+		// selecting tcp via env var (intentionally or via a leaked
+		// dotenv) deserve a visible signal.
+		log.Printf("WARNING: WAVETERM_ROUTER_TRANSPORT=tcp selected; connserver will use the JWT-authenticated reverse-forwarded loopback port instead of the SSH-channel-bound stdio transport\n")
 		return RouterTransportTCP
+	}
+	if v != "" && v != "stdio" {
+		// Unknown value — log so misconfigurations don't go silent.
+		log.Printf("WARNING: WAVETERM_ROUTER_TRANSPORT=%q unrecognized; expected 'stdio' or 'tcp'. Using stdio.\n", raw)
 	}
 	return RouterTransportStdio
 }()
@@ -299,7 +313,7 @@ func (conn *SSHConn) OpenDomainSocketListener(ctx context.Context) error {
 		return conn.Status == Status_Connecting
 	})
 	if !allowed {
-		return fmt.Errorf("cannot open domain socket for %q when status is %q", conn.GetName(), conn.GetStatus())
+		return fmt.Errorf("cannot open TCP listener for %q when status is %q", conn.GetName(), conn.GetStatus())
 	}
 	client := conn.GetClient()
 	// Use TCP forwarding instead of Unix socket forwarding.
@@ -352,6 +366,25 @@ func IsWshVersionUpToDate(logCtx context.Context, wshVersionLine string) (bool, 
 		return false, clientVersion, "", nil
 	}
 	return true, clientVersion, "", nil
+}
+
+// isWshVersionLine returns true if line looks like a wsh version line — either
+// the "not-installed <arch>" prefix or "<program> <semver>" two-field form.
+// Used by StartConnServer to skip non-version lines (dev-log stderr, panichandler
+// stack traces, wrapper banners) that can race ahead of the real version line.
+func isWshVersionLine(line string) bool {
+	trimmed := strings.TrimSpace(line)
+	if strings.HasPrefix(trimmed, "not-installed ") {
+		return true
+	}
+	parts := strings.Fields(trimmed)
+	if len(parts) != 2 {
+		return false
+	}
+	// Be conservative: only accept what semver.Compare will accept.
+	// golang.org/x/mod/semver has IsValid, which checks the vX.Y.Z form
+	// when given a leading "v".
+	return semver.IsValid("v" + parts[1])
 }
 
 // for testing only -- trying to determine the env difference when attaching or not attaching a pty to an ssh session
@@ -540,13 +573,19 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 			sshSession.Close()
 			return false, "", "", fmt.Errorf("error reading wsh version: %w", err)
 		}
-		if strings.HasPrefix(strings.TrimSpace(line), "[PID:") {
-			conn.Infof(ctx, "skipping connserver dev-log line before version: %s\n", strings.TrimSpace(line))
+		// In --dev mode connserver logs to stderr (merged into this
+		// pipe); panichandler stack traces can race ahead, wrapper
+		// scripts may emit banners, etc. Use a positive version-line
+		// check rather than prefix matching — accept only lines that
+		// match the wsh version format ('not-installed ...' or
+		// '<program> <semver>') and skip everything else.
+		if !isWshVersionLine(line) {
+			conn.Infof(ctx, "skipping non-version line before wsh version: %s\n", strings.TrimSpace(line))
 			continue
 		}
 		versionLine = line
 		break
-	}
+}
 	conn.Infof(ctx, "actual connserver version: %q\n", versionLine)
 	conn.Infof(ctx, "got connserver version: %s\n", strings.TrimSpace(versionLine))
 	isUpToDate, clientVersion, osArchStr, err := IsWshVersionUpToDate(ctx, versionLine)

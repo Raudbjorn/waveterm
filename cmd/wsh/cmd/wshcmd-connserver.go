@@ -133,6 +133,34 @@ func MakeRemoteUnixListener() (net.Listener, error) {
 	return rtn, nil
 }
 
+// dialUpstreamWithRetry connects to the upstream TCP endpoint with a bounded
+// retry. Each attempt has a 10s per-dial timeout; between attempts the
+// caller sleeps for an exponential backoff (200ms, 500ms, 1s) to absorb
+// transient failures (sshd hiccup, TCP-backlog exhaustion, brief network
+// blip). The function returns the first successful connection or the last
+// error after `attempts` tries.
+func dialUpstreamWithRetry(tcpAddr string, attempts int) (net.Conn, error) {
+	if attempts < 1 {
+		attempts = 1
+	}
+	backoffs := []time.Duration{200 * time.Millisecond, 500 * time.Millisecond, 1 * time.Second}
+	var lastErr error
+	for i := 0; i < attempts; i++ {
+		conn, err := net.DialTimeout("tcp", tcpAddr, 10*time.Second)
+		if err == nil {
+			if i > 0 {
+				log.Printf("upstream tcp connection succeeded on attempt %d/%d\n", i+1, attempts)
+			}
+			return conn, nil
+		}
+		lastErr = err
+		if i < attempts-1 && i < len(backoffs) {
+			log.Printf("upstream tcp dial attempt %d/%d failed (%v); retrying in %s\n", i+1, attempts, err, backoffs[i])
+			time.Sleep(backoffs[i])
+		}
+	}
+	return nil, lastErr
+}
 func handleNewListenerConn(conn net.Conn, router *wshutil.WshRouter) {
 	defer func() {
 		panichandler.PanicHandler("handleNewListenerConn", recover())
@@ -409,9 +437,13 @@ func serverRunRouterTCP(jwtToken string) error {
 	if err != nil {
 		return fmt.Errorf("error extracting tcp address from JWT: %v", err)
 	}
-
-	// connect to the forwarded tcp port
-	conn, err := net.DialTimeout("tcp", tcpAddr, 10*time.Second)
+	// connect to the forwarded tcp port. Bounded retry (3 attempts with
+	// 200ms / 500ms / 1s backoff) absorbs the common transient case — a
+	// brief sshd hiccup, TCP-backlog exhaustion on the remote loopback,
+	// or a transient network blip during connection setup. A single
+	// DialTimeout would fail the entire connserver bring-up on any of
+	// these, with no way for the user to retry without restarting.
+	conn, err := dialUpstreamWithRetry(tcpAddr, 3)
 	if err != nil {
 		return fmt.Errorf("error connecting to tcp upstream %s: %v", tcpAddr, err)
 	}
@@ -475,11 +507,14 @@ func serverRunRouterTCP(jwtToken string) error {
 	}
 	log.Printf("got JWT public key")
 
-	// the local unix-socket listener is what clients will reach us through
-	// (the symlink in ConnServerInitCommand points at this path). Set it up
-	// before wiring the RPC client so its sockName is valid. We deliberately
-	// do NOT pass `tcpAddr` here: that is the remote-loopback endpoint, which
-	// has no meaning as a symlink target on the client machine.
+	// the local unix-socket listener is what we expose on this host (the
+	// connserver host). The symlink in ConnServerInitCommand points at
+	// this path so a future wave process on this host can find the
+	// socket — the symlink target is local, not remote. Set the listener
+	// up before wiring the RPC client so its sockName is valid. We
+	// deliberately do NOT pass `tcpAddr` here: that is the
+	// reverse-forwarded loopback endpoint, which has no meaning as a
+	// filesystem path for a symlink on this host.
 	unixListener, err := MakeRemoteUnixListener()
 	if err != nil {
 		return fmt.Errorf("cannot create unix listener: %v", err)
