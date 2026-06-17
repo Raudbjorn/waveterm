@@ -530,7 +530,12 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 	var versionLine string
 	versionDeadline := time.Now().Add(utilfn.TimeoutFromContext(ctx, 30*time.Second))
 	for {
-		line, err := utilfn.ReadLineWithTimeout(linesChan, time.Until(versionDeadline))
+		remaining := time.Until(versionDeadline)
+		if remaining <= 0 {
+			sshSession.Close()
+			return false, "", "", fmt.Errorf("timeout reading wsh version (deadline already passed)")
+		}
+		line, err := utilfn.ReadLineWithTimeout(linesChan, remaining)
 		if err != nil {
 			sshSession.Close()
 			return false, "", "", fmt.Errorf("error reading wsh version: %w", err)
@@ -542,7 +547,7 @@ func (conn *SSHConn) StartConnServer(ctx context.Context, afterUpdate bool, useR
 		versionLine = line
 		break
 	}
-	conn.Infof(ctx, "actual connnserverversion: %q\n", versionLine)
+	conn.Infof(ctx, "actual connserver version: %q\n", versionLine)
 	conn.Infof(ctx, "got connserver version: %s\n", strings.TrimSpace(versionLine))
 	isUpToDate, clientVersion, osArchStr, err := IsWshVersionUpToDate(ctx, versionLine)
 	if err != nil {
@@ -970,9 +975,9 @@ func (conn *SSHConn) tryEnableWsh(ctx context.Context, clientDisplayName string)
 	if RouterTransport == RouterTransportTCP {
 		err := conn.OpenDomainSocketListener(ctx)
 		if err != nil {
-			conn.Infof(ctx, "ERROR opening domain socket listener: %v\n", err)
-			err = fmt.Errorf("error opening domain socket listener: %w", err)
-			return WshCheckResult{NoWshReason: "error opening domain socket", NoWshCode: NoWshCode_DomainSocketError, WshError: err}
+			conn.Infof(ctx, "ERROR opening TCP-upstream listener: %v\n", err)
+			err = fmt.Errorf("error opening TCP-upstream listener: %w", err)
+			return WshCheckResult{NoWshReason: "error opening TCP-upstream listener", NoWshCode: NoWshCode_DomainSocketError, WshError: err}
 		}
 	}
 	needsInstall, clientVersion, osArchStr, err := conn.StartConnServer(ctx, false, true)
