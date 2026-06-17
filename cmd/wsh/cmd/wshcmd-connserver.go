@@ -437,6 +437,7 @@ func serverRunRouterTCP(jwtToken string) error {
 	if err != nil {
 		return fmt.Errorf("error extracting tcp address from JWT: %v", err)
 	}
+
 	// connect to the forwarded tcp port. Bounded retry (3 attempts with
 	// 200ms / 500ms / 1s backoff) absorbs the common transient case — a
 	// brief sshd hiccup, TCP-backlog exhaustion on the remote loopback,
@@ -506,6 +507,7 @@ func serverRunRouterTCP(jwtToken string) error {
 		return fmt.Errorf("error setting jwt public key: %v", err)
 	}
 	log.Printf("got JWT public key")
+
 
 	// the local unix-socket listener is what we expose on this host (the
 	// connserver host). The symlink in ConnServerInitCommand points at
