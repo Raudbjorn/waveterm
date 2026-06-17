@@ -50,5 +50,29 @@
                 "view": "processviewer"
             }
         }
+    },
+    "defwidget@gpu": {
+        "display:order": 0,
+        "icon": "microchip",
+        "label": "gpu",
+        "blockdef": {
+            "meta": {
+                "view": "gpu"
+            }
+        }
+    },
+    "defwidget@bandwidth": {
+        "display:order": 1,
+        "icon": "tower-broadcast",
+        "label": "wan",
+        "blockdef": {
+            "meta": {
+                "view": "term",
+                "controller": "cmd",
+                "cmd": "realm wave bandwidth",
+                "cmd:interactive": true,
+                "cmd:closeonexit": false
+            }
+        }
     }
 }

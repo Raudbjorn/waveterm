@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -648,16 +649,27 @@ func StartLocalShellProc(logCtx context.Context, termSize waveobj.TermSize, cmdS
 	  overrides them to point to snap directories. We will get the correct values, if
 	  set, from the PAM environment. If the XDG variables are set in profile or in an
 	  RC file, it will be overridden when the shell initializes.
+
+	  Gate on SNAP_NAME==waveterm rather than SNAP!="" because $SNAP is inherited from
+	  any snap-confined ancestor process (e.g. a CLI tool installed as a snap launching
+	  wavesrv from the user's shell). The old check fired for those cases too and wrote
+	  empty XDG_*_HOME values into spawned shells, causing tools that path-join the
+	  vars (mise, claude, android-sdk) to leak caches into CWD. See issue #3336.
 	*/
-	if os.Getenv("SNAP") != "" {
+	if os.Getenv("SNAP_NAME") == "waveterm" {
 		log.Printf("Detected Snap installation, correcting XDG environment variables")
-		varsToReplace := map[string]string{"XDG_CONFIG_HOME": "", "XDG_DATA_HOME": "", "XDG_CACHE_HOME": "", "XDG_RUNTIME_DIR": "", "XDG_CONFIG_DIRS": "", "XDG_DATA_DIRS": ""}
-		pamEnvs := tryGetPamEnvVars()
-		if len(pamEnvs) > 0 {
-			// We only want to set the XDG variables from the PAM environment, all others should already be correct or may have been overridden by something else out of our control
-			for k := range pamEnvs {
-				if _, ok := varsToReplace[k]; ok {
-					varsToReplace[k] = pamEnvs[k]
+		home := wavebase.GetHomeDir()
+		varsToReplace := map[string]string{
+			"XDG_CONFIG_HOME": filepath.Join(home, ".config"),
+			"XDG_DATA_HOME":   filepath.Join(home, ".local", "share"),
+			"XDG_CACHE_HOME":  filepath.Join(home, ".cache"),
+		}
+		// Only the *_HOME vars are corrected here. PAM overrides our spec defaults when it provides a non-empty value; empty PAM values are ignored so we never write "" into the child env. *_DIRS and RUNTIME_DIR are intentionally left to inheritance — tryGetPamEnvVars synthesizes spec-bare defaults for those, which would override the richer snap-rewritten or session values that wavesrv already carries.
+		for k, v := range tryGetPamEnvVars() {
+			switch k {
+			case "XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME":
+				if v != "" {
+					varsToReplace[k] = v
 				}
 			}
 		}

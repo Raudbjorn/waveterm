@@ -4,8 +4,12 @@
 package wshremote
 
 import (
+	"context"
 	"log"
+	"os/exec"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -17,6 +21,12 @@ import (
 )
 
 const BYTES_PER_GB = 1073741824
+
+var (
+	nvidiaSmiPath   string
+	nvidiaSmiOnce   sync.Once
+	nvidiaSmiAbsent bool
+)
 
 func getCpuData(values map[string]float64) {
 	percentArr, err := cpu.Percent(0, false)
@@ -46,11 +56,91 @@ func getMemData(values map[string]float64) {
 	values["mem:free"] = float64(memData.Free) / BYTES_PER_GB
 }
 
+func detectNvidiaSmi() {
+	nvidiaSmiOnce.Do(func() {
+		path, err := exec.LookPath("nvidia-smi")
+		if err != nil {
+			nvidiaSmiAbsent = true
+			return
+		}
+		nvidiaSmiPath = path
+		log.Printf("sysinfo: nvidia-smi detected at %s\n", path)
+	})
+}
+
+func parseGpuFloat(s string) (float64, bool) {
+	s = strings.TrimSpace(s)
+	if s == "" || s == "[N/A]" || s == "N/A" {
+		return 0, false
+	}
+	v, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, false
+	}
+	return v, true
+}
+
+func getGpuData(values map[string]float64) {
+	detectNvidiaSmi()
+	if nvidiaSmiAbsent {
+		return
+	}
+	// wedged, GPU in a bad state) would otherwise stall the entire sysinfo
+	// loop and starve CPU/mem updates for the connection.
+	nvidiaCtx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+	out, err := exec.CommandContext(nvidiaCtx, nvidiaSmiPath,
+		"--query-gpu=utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu,power.draw,power.limit,fan.speed",
+		"--format=csv,noheader,nounits",
+	).Output()
+	if err != nil {
+		return
+	}
+	line := strings.TrimSpace(string(out))
+	if line == "" {
+		return
+	}
+	// only take the first GPU for now
+	if nl := strings.IndexByte(line, '\n'); nl >= 0 {
+		line = line[:nl]
+	}
+	fields := strings.Split(line, ",")
+	if len(fields) < 8 {
+		return
+	}
+	values["gpu:available"] = 1
+	if v, ok := parseGpuFloat(fields[0]); ok {
+		values[wshrpc.TimeSeries_Gpu] = v
+	}
+	if v, ok := parseGpuFloat(fields[1]); ok {
+		values["gpu:memutil"] = v
+	}
+	if v, ok := parseGpuFloat(fields[2]); ok {
+		values["gpu:memtotal"] = v / 1024 // MiB -> GiB
+	}
+	if v, ok := parseGpuFloat(fields[3]); ok {
+		values["gpu:memused"] = v / 1024
+	}
+	if v, ok := parseGpuFloat(fields[4]); ok {
+		values["gpu:temp"] = v
+	}
+	if v, ok := parseGpuFloat(fields[5]); ok {
+		values["gpu:power"] = v
+	}
+	if v, ok := parseGpuFloat(fields[6]); ok {
+		values["gpu:powerlimit"] = v
+	}
+	if v, ok := parseGpuFloat(fields[7]); ok {
+		values["gpu:fan"] = v
+	}
+}
+
 func generateSingleServerData(client *wshutil.WshRpc, connName string) {
 	now := time.Now()
 	values := make(map[string]float64)
 	getCpuData(values)
 	getMemData(values)
+	getGpuData(values)
 	tsData := wshrpc.TimeSeriesData{Ts: now.UnixMilli(), Values: values}
 	event := wps.WaveEvent{
 		Event:   wps.Event_SysInfo,
