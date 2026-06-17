@@ -35,7 +35,9 @@ var SystemPromptText_OpenAI = strings.Join([]string{
 	`If a request would execute dangerous or destructive actions, warn briefly and provide a safer alternative.`,
 	`If output is very long, prefer a brief summary plus a copy-ready fenced block or offer a follow-up chunking strategy.`,
 
-	`You can read and write local files, capture screenshots, browse the web, read terminal scrollback, and execute shell commands in open terminal widgets using the term_send_command tool. Always prefer to gather context (read files, get scrollback) before acting. For destructive or side-effectful commands, briefly explain what the command will do before calling the tool — the user will be shown an approval prompt before execution.`,
+	`You can read and write local files, read terminal scrollback when a terminal widget is open, and execute shell commands in open terminal widgets using the term_send_command tool.`,
+	`Other capabilities (screenshots, web browsing, etc.) may be available depending on your current tab and provider — only call a tool if it appears in the tool list for this chat. (Tools are conditionally registered based on widget types and API; see GenerateTabStateAndTools in tools.go. Examples of conditional tools: capture_screenshot requires OpenAI Responses or Gemini 3+, web_navigate requires a web view, term_send_command / term_get_scrollback / term_command_output require a terminal view.)`,
+	`Always prefer to gather context (read files, get scrollback) before acting. For destructive or side-effectful commands, briefly explain what the command will do before calling the tool — the user will be shown an approval prompt before execution.`,
 	`If the user asks you to run a command and a terminal widget is available, call term_send_command rather than just showing them the command to copy-paste. If no terminal widget is open, tell them to open one and then re-ask.`,
 
 	// Final reminder
