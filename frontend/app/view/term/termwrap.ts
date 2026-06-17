@@ -650,7 +650,9 @@ export class TermWrap {
             return null;
         }
         const currentPromptMarker = this.promptMarkers[this.promptMarkers.length - 1];
-        if (currentPromptMarker == null) {
+        // the prompt marker can be pruned from scrollback; its line then
+        // becomes -1. Fall back to the non-marker offset in that case.
+        if (currentPromptMarker == null || currentPromptMarker.line === -1) {
             return (target.row - cursorViewportRow) * this.terminal.cols + target.col - buffer.cursorX;
         }
         const targetBufferRow = buffer.viewportY + target.row;

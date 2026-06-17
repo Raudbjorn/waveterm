@@ -539,7 +539,9 @@ function countTermBlocks(): number {
 }
 
 function shouldSendAltShortcutsToTerminal(): boolean {
-    return isWindows() && globalStore.get(getSettingsKeyAtom("app:altnumbertoterminal"));
+    // coalesce to false when the setting is unset — globalStore.get may
+    // return undefined for unset atoms, and the call sites expect a boolean
+    return isWindows() && !!globalStore.get(getSettingsKeyAtom("app:altnumbertoterminal"));
 }
 
 function shouldSendAltShortcutToTerminal(waveEvent: WaveKeyboardEvent): boolean {
@@ -721,10 +723,10 @@ function registerGlobalKeys() {
         return true;
     });
     for (let idx = 1; idx <= 9; idx++) {
-        globalKeyMap.set(`Cmd:${idx}`, (event: WaveKeyboardEvent) => {
-            if (shouldSendAltShortcutToTerminal(event)) {
-                return false;
-            }
+        globalKeyMap.set(`Cmd:${idx}`, (_event: WaveKeyboardEvent) => {
+            // the inner shouldSendAltShortcutToTerminal check is dead: a Cmd
+            // event always has control or meta pressed, which short-circuits
+            // shouldSendAltShortcutToTerminal to false. The check is removed.
             switchTabAbs(idx);
             return true;
         });
