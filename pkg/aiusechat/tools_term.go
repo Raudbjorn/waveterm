@@ -243,9 +243,9 @@ func parseTermCommandOutputInput(input any) (*TermCommandOutputToolInput, error)
 }
 
 type TermSendCommandToolInput struct {
-	WidgetId       string `json:"widget_id"`
-	Command        string `json:"command"`
-	WaitForOutput  bool   `json:"wait_for_output,omitempty"`
+	WidgetId      string `json:"widget_id"`
+	Command       string `json:"command"`
+	WaitForOutput *bool  `json:"wait_for_output,omitempty"`
 }
 
 func parseTermSendCommandInput(input any) (*TermSendCommandToolInput, error) {
@@ -334,7 +334,10 @@ func GetTermSendCommandToolDefinition(tabId string) uctypes.ToolDefinition {
 				return nil, fmt.Errorf("failed to send command to terminal: %w", err)
 			}
 
-			waitForOutput := parsed.WaitForOutput || true
+			waitForOutput := true
+			if parsed.WaitForOutput != nil {
+				waitForOutput = *parsed.WaitForOutput
+			}
 			if waitForOutput {
 				time.Sleep(2 * time.Second)
 				output, err := getTermScrollbackOutput(
