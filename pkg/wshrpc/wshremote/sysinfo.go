@@ -4,6 +4,7 @@
 package wshremote
 
 import (
+	"context"
 	"log"
 	"os/exec"
 	"strconv"
@@ -84,7 +85,11 @@ func getGpuData(values map[string]float64) {
 	if nvidiaSmiAbsent {
 		return
 	}
-	out, err := exec.Command(nvidiaSmiPath,
+	// wedged, GPU in a bad state) would otherwise stall the entire sysinfo
+	// loop and starve CPU/mem updates for the connection.
+	nvidiaCtx, cancel := context.WithTimeout(context.Background(), 800*time.Millisecond)
+	defer cancel()
+	out, err := exec.CommandContext(nvidiaCtx, nvidiaSmiPath,
 		"--query-gpu=utilization.gpu,utilization.memory,memory.total,memory.used,temperature.gpu,power.draw,power.limit,fan.speed",
 		"--format=csv,noheader,nounits",
 	).Output()

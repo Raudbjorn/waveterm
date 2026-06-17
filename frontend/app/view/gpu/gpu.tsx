@@ -55,7 +55,7 @@ export class GpuViewModel implements ViewModel {
     filterOutNowsh: jotai.Atom<boolean>;
     connection: jotai.Atom<string>;
     connStatus: jotai.Atom<ConnStatus>;
-    latestAtom: jotai.PrimitiveAtom<GpuSnapshot>;
+    latestAtom: jotai.PrimitiveAtom<GpuSnapshot | null>;
     historyAtom: jotai.PrimitiveAtom<GpuSnapshot[]>;
     pushSnapshotAtom: jotai.WritableAtom<unknown, [GpuSnapshot], void>;
 
@@ -67,8 +67,8 @@ export class GpuViewModel implements ViewModel {
         this.noPadding = jotai.atom(true);
         this.manageConnection = jotai.atom(true);
         this.filterOutNowsh = jotai.atom(true);
-        this.latestAtom = jotai.atom<GpuSnapshot>(null) as jotai.PrimitiveAtom<GpuSnapshot>;
-        this.historyAtom = jotai.atom<GpuSnapshot[]>([]) as jotai.PrimitiveAtom<GpuSnapshot[]>;
+        this.latestAtom = jotai.atom<GpuSnapshot | null>(null) as jotai.PrimitiveAtom<GpuSnapshot | null>;
+        this.historyAtom = jotai.atom<GpuSnapshot[]>([]);
         this.pushSnapshotAtom = jotai.atom(null, (get, set, snap: GpuSnapshot) => {
             set(this.latestAtom, snap);
             const prev = get(this.historyAtom);
@@ -311,6 +311,9 @@ type SparklineProps = {
 };
 
 function Sparkline({ points, color, height = 60 }: SparklineProps) {
+    // useId ensures the SVG gradient defs are unique per-instance so multiple
+    // GPU blocks rendered on the same page don't cross-apply gradients.
+    const gradId = React.useId();
     const containerRef = React.useRef<HTMLDivElement>(null);
     const [width, setWidth] = React.useState(300);
     React.useEffect(() => {
@@ -338,7 +341,6 @@ function Sparkline({ points, color, height = 60 }: SparklineProps) {
     const areaPath =
         linePath +
         ` L${coords[coords.length - 1][0].toFixed(1)},${height} L${coords[0][0].toFixed(1)},${height} Z`;
-    const gradId = "gpu-spark-grad";
     return (
         <div ref={containerRef} style={{ height }} className="w-full">
             <svg width={width} height={height}>
