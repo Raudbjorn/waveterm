@@ -28,13 +28,14 @@ test.describe("search + copy-on-select clipboard behavior", () => {
     });
 
     test("navigating search results should not overwrite clipboard", async () => {
-        await window.waitForTimeout(8000);
+        // Wait for the terminal view to mount before interacting with it.
+        await window.waitForSelector(".view-term", { state: "visible" });
 
         await setClipboard(app, "known-clipboard-content");
         expect(await readClipboard(app)).toBe("known-clipboard-content");
 
         await window.keyboard.press("Control+f");
-        await window.waitForTimeout(1000);
+        await window.waitForSelector(".search-container", { state: "visible" });
 
         await window.keyboard.type("test");
         await window.waitForTimeout(1000);
