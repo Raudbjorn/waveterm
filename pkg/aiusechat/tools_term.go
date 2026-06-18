@@ -378,7 +378,7 @@ func GetTermSendCommandToolDefinition(tabId string) uctypes.ToolDefinition {
 				// commands (echo hi) return in one poll interval; slow
 				// commands (npm install) get up to 5 s of observation;
 				// hung shells time out cleanly.
-				if pollErr := waitForShellReady(fullBlockId); pollErr != nil {
+				if pollErr := waitForShellReady(ctx, fullBlockId); pollErr != nil {
 					return map[string]any{"sent": true, "output_read": false, "note": fmt.Sprintf("command sent; could not observe completion: %v", pollErr)}, nil
 				}
 				output, err := getTermScrollbackOutput(
@@ -411,28 +411,34 @@ func GetTermSendCommandToolDefinition(tabId string) uctypes.ToolDefinition {
 }
 
 // waitForShellReady polls rtInfo.ShellState for the given block until the
-// shell reports "ready" (or shell integration is disabled) or the
-// shellReadyMaxWait deadline elapses. Replaces the previous fixed 2 s
-// sleep. Returns nil on success or an error if the deadline passed.
-func waitForShellReady(fullBlockId string) error {
+// shell reports "ready" (or shell integration is disabled) or the caller's
+// context is cancelled or its deadline elapses. Replaces the previous fixed
+// 2 s sleep. Returns nil on success, ctx.Err() on cancellation/deadline, or
+// an error if the shell never reports ready before the context fires.
+func waitForShellReady(ctx context.Context, fullBlockId string) error {
 	blockORef := waveobj.MakeORef(waveobj.OType_Block, fullBlockId)
-	deadline := time.Now().Add(shellReadyMaxWait)
 	for {
-		rtInfo := wstore.GetRTInfo(blockORef)
 		// shell integration disabled -> we can't observe completion;
 		// give a single poll-interval grace and assume it ran.
+		rtInfo := wstore.GetRTInfo(blockORef)
 		if rtInfo == nil || !rtInfo.ShellIntegration {
-			time.Sleep(shellReadyPollInterval)
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(shellReadyPollInterval):
+			}
 			return nil
 		}
 		if rtInfo.ShellState == "ready" {
 			return nil
 		}
-		// "running-command" or unknown state: keep polling until deadline.
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timed out after %s waiting for shell to become ready", shellReadyMaxWait)
+		// "running-command" or unknown state: keep polling until the
+		// caller's context fires.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(shellReadyPollInterval):
 		}
-		time.Sleep(shellReadyPollInterval)
 	}
 }
 
