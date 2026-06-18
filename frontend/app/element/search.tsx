@@ -29,6 +29,7 @@ const SearchComponent = ({
     isOpen: isOpenAtom,
     focusInput: focusInputAtom,
     anchorRef,
+    searchInputRef: providedInputRef,
     offsetX = 10,
     offsetY = 10,
     onSearch,
@@ -36,13 +37,12 @@ const SearchComponent = ({
     onPrev,
 }: SearchProps) => {
     const localInputRef = useRef<HTMLInputElement>(null);
-    const inputRef = providedInputRef || localInputRef;
+    const inputRef = providedInputRef ?? localInputRef;
     const [isOpen, setIsOpen] = useAtom<boolean>(isOpenAtom);
     const [search, setSearch] = useAtom<string>(searchAtom);
     const [index, setIndex] = useAtom<number>(indexAtom);
     const [numResults, setNumResults] = useAtom<number>(numResultsAtom);
     const [focusInputCounter, setFocusInputCounter] = useAtom<number>(focusInputAtom);
-    const inputRef = useRef<HTMLInputElement>(null);
 
     const handleOpenChange = useCallback((open: boolean) => {
         setIsOpen(open);
@@ -227,11 +227,14 @@ export function useSearch(options?: SearchOptions): SearchProps {
     useEffect(() => {
         if (options?.viewModel) {
             options.viewModel.searchAtoms = searchAtoms;
-            // Store searchInputRef on viewModel for external access (e.g., keymodel.ts)
-            (options.viewModel as any).searchInputRef = searchInputRef;
+            // Store searchInputRef on viewModel for external access (e.g., keymodel.ts).
+            // Cast through a typed inline shape to avoid `as any` while remaining
+            // backwards-compatible with view-model types that pre-date the property.
+            const vm = options.viewModel as ViewModel & { searchInputRef?: React.RefObject<HTMLInputElement> };
+            vm.searchInputRef = searchInputRef;
             return () => {
                 options.viewModel.searchAtoms = undefined;
-                (options.viewModel as any).searchInputRef = undefined;
+                vm.searchInputRef = undefined;
             };
         }
     }, [options?.viewModel]);
