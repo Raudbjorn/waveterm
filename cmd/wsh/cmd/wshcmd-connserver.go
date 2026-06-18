@@ -154,9 +154,18 @@ func dialUpstreamWithRetry(tcpAddr string, attempts int) (net.Conn, error) {
 			return conn, nil
 		}
 		lastErr = err
-		if i < attempts-1 && i < len(backoffs) {
-			log.Printf("upstream tcp dial attempt %d/%d failed (%v); retrying in %s\n", i+1, attempts, err, backoffs[i])
-			time.Sleep(backoffs[i])
+		if i < attempts-1 {
+			// Cap the backoff to the last entry once we exhaust the
+			// backoff schedule. Without this, attempts beyond len(backoffs)
+			// fall through the `i < len(backoffs)` check and spin-retry
+			// with no sleep at all, which is the opposite of what an
+			// exponential backoff is meant to do.
+			backoff := backoffs[len(backoffs)-1]
+			if i < len(backoffs) {
+				backoff = backoffs[i]
+			}
+			log.Printf("upstream tcp dial attempt %d/%d failed (%v); retrying in %s\n", i+1, attempts, err, backoff)
+			time.Sleep(backoff)
 		}
 	}
 	return nil, lastErr

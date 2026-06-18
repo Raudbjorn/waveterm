@@ -316,6 +316,9 @@ func (conn *SSHConn) OpenDomainSocketListener(ctx context.Context) error {
 		return fmt.Errorf("cannot open TCP listener for %q when status is %q", conn.GetName(), conn.GetStatus())
 	}
 	client := conn.GetClient()
+	if client == nil {
+		return fmt.Errorf("ssh client is not connected, cannot open TCP listener for %q", conn.GetName())
+	}
 	// Use TCP forwarding instead of Unix socket forwarding.
 	// sshd creates Unix socket forwards as root:root 0600 (pre-privilege-separation),
 	// making them inaccessible to the connecting user. TCP listeners are kernel-managed
@@ -382,9 +385,12 @@ func isWshVersionLine(line string) bool {
 		return false
 	}
 	// Be conservative: only accept what semver.Compare will accept.
-	// golang.org/x/mod/semver has IsValid, which checks the vX.Y.Z form
-	// when given a leading "v".
-	return semver.IsValid("v" + parts[1])
+	// The connserver version line is "<program> vX.Y.Z" (e.g. "wsh v0.10.4"),
+	// so parts[1] is already a leading-v semver. Pass it straight to IsValid —
+	// the previous code prefixed another "v" and rejected real version lines
+	// (e.g. "vv0.10.4") as invalid, causing StartConnServer to time out
+	// waiting for a non-version match.
+	return semver.IsValid(parts[1])
 }
 
 // for testing only -- trying to determine the env difference when attaching or not attaching a pty to an ssh session
